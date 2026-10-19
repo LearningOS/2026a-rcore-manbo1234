@@ -1,10 +1,10 @@
-use crate::timer::get_time_us;
 //! Process management syscalls
 use alloc::sync::Arc;
+use crate::timer::get_time_us;
 
 use crate::{
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str, MapPermission, VirtAddr},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
@@ -113,21 +113,24 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    if len == 0 || start % crate::config::PAGE_SIZE != 0 || port & !0x7 != 0 { return -1; }
+    let end = match start.checked_add(len) { Some(v) => v, None => return -1 };
+    let end = (end + crate::config::PAGE_SIZE - 1) / crate::config::PAGE_SIZE * crate::config::PAGE_SIZE;
+    let process = current_task().unwrap(); let mut inner = process.inner_exclusive_access();
+    if inner.memory_set.translate(VirtAddr(start).floor()).is_some() { return -1; }
+    let mut perm = MapPermission::U;
+    if port & 1 != 0 { perm |= MapPermission::R; } if port & 2 != 0 { perm |= MapPermission::W; } if port & 4 != 0 { perm |= MapPermission::X; }
+    inner.memory_set.insert_framed_area(VirtAddr(start), VirtAddr(end), perm); 0
 }
 
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    if len == 0 || start % crate::config::PAGE_SIZE != 0 { return -1; }
+    let end = match start.checked_add(len) { Some(v) => v, None => return -1 }; if end % crate::config::PAGE_SIZE != 0 { return -1; }
+    let process = current_task().unwrap(); let mut inner = process.inner_exclusive_access();
+    if inner.memory_set.translate(VirtAddr(start).floor()).is_none() { return -1; }
+    inner.memory_set.remove_area_with_start_vpn(VirtAddr(start).floor()); 0
 }
 
 /// change data segment size
