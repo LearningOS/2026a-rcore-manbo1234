@@ -54,6 +54,7 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            syscall_count: [0; 500],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -134,6 +135,17 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+        }
+    fn record_syscall(&self, id: usize) -> usize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let count = &mut inner.tasks[current].syscall_count;
+        if id < count.len() { count[id] += 1; count[id] } else { 0 }
+    }
+
+    fn syscall_count(&self, id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        if id < inner.tasks[inner.current_task].syscall_count.len() { inner.tasks[inner.current_task].syscall_count[id] } else { 0 }
     }
 }
 
@@ -169,3 +181,8 @@ pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
 }
+
+/// Record a syscall for the current task.
+pub fn record_syscall(id: usize) -> usize { TASK_MANAGER.record_syscall(id) }
+/// Read a syscall count for the current task.
+pub fn syscall_count(id: usize) -> usize { TASK_MANAGER.syscall_count(id) }
