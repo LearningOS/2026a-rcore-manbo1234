@@ -1,7 +1,7 @@
-use crate::timer::get_time_us;
 //! Process management syscalls
 //!
 use alloc::sync::Arc;
+use crate::timer::get_time_us;
 
 use crate::{
     fs::{open_file, OpenFlags},
